@@ -1,0 +1,57 @@
+import open3d as o3d
+import numpy as np
+from pyntcloud import PyntCloud
+from pandas import DataFrame
+
+def PCA(data,correlation=False,sort=True):
+    data_mean = np.mean(data,axis=0)
+    data_normalize = data - data_mean
+    H = np.dot(data_normalize.T,data_normalize)
+    eigenvectors,eigenvalues,eigenvectors_t=np.linalg.svd(H)
+    if sort:
+        sort = eigenvalues.argsort()[::-1]
+        eigenvalues = eigenvalues[sort]
+        eigenvectors = eigenvectors[:,sort]
+    return eigenvectors , eigenvalues
+
+def main():
+    #创建数组表格数据 读取txt文档
+    raw_point_cloud_matrix = np.genfromtxt(r"F:\\point cloud\\三维点云课程\\3d数据集\\modelnet40_normal_resampled\\airplane\\airplane_0002.txt", delimiter=",")
+    #可以理解为建立表格，类似excel,且只需要前三列数据（x,y,z）
+    raw_point_cloud=DataFrame(raw_point_cloud_matrix[:,0:3])
+    raw_point_cloud.columns = ['x','y','z']
+    #将数据转化为open3d可以识别的格式
+    point_cloud_pynt = PyntCloud(raw_point_cloud)
+    
+    #从点云中获取点
+    points = point_cloud_pynt.points
+    print("total points number is :"points.shape[0])
+
+    #使用PCA分析点云主方向
+    w,v = PCA(points)
+    #提取前两个主分量
+    point_cloud_vector = v[:,2]
+    print("the main orientation of this pointcloud is :",point_cloud_vector)
+
+    point = [[0,0,0],v[:,0],v[:,1]]
+    lines = [[0,1],[0,2]]
+    colors = [[1,0,0],[0,1,0]]
+
+    line_set = o3d.geometry.LineSet(points = o3d.utility.Vector3dVector(point),lines = o3d.utility.Vector2iVector(lines))
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+    o3d.visualization.draw_geometries([point_cloud_o3d,line_set])
+
+#首先建立一个KD树
+    pcd_tree = o3d.geometry.KDTreeFlann(point_cloud_o3d)
+    normals = [] #存储法向量
+    #由于一个点的法向量有无穷多个，因此计算一定数量最邻近点，求其法向量
+    for i in range(points.shape[0]):
+        [_,idx,_] = pcd_tree.search_knn_vector_3d(point_cloud_o3d.points[i],10)
+        k_nearest_point = np.asarray(point_cloud_o3d.points)[idx,:]
+        v,u = PCA(k_nearest_point)
+        #提取最后一个成分
+        normals.append(u[:,2])
+    normals = np.array(normals, dtype=np.float64)
+    point_cloud_o3d.normals = o3d.utility.Vector3dVector(normals)
+    o3d.visualization.draw_geometries([point_cloud_o3d])
+
